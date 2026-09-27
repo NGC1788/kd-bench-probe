@@ -39,6 +39,11 @@ STUDENT_PEAK_GIB = 1.5  # reference runs measured 1.24 GiB reserved (batch 32); 
 TEACHER_PEAK_GIB = 2.5  # reference teacher measured 2.11 GiB
 
 
+def runner_sha256():
+    import hashlib
+    return hashlib.sha256(Path(__file__).resolve().read_bytes()).hexdigest()
+
+
 def use_benchmark():
     if not (BENCH / "reference" / "engine.py").is_file():
         sys.exit("benchmark missing: run ./run.sh setup first")
@@ -76,7 +81,10 @@ def worker(a):
     cfg = load_config(a.config)
     if a.role == "student":
         spec = ARMS[arm]
-        cfg = {**cfg, "keep_patches": spec["keep_patches"], "probe_arm": arm, "ce_in_loss": spec["ce"]}
+        # The runner's own hash joins the benchmark's run signature, so editing this file
+        # can never silently reuse student results produced by an older version of it.
+        cfg = {**cfg, "keep_patches": spec["keep_patches"], "probe_arm": arm, "ce_in_loss": spec["ce"],
+               "probe_runner_sha256": runner_sha256()}
         if not spec["ce"]:
             class NoCE:
                 """torch.nn.functional with cross_entropy returning 0 (CE removed from the loss)."""
@@ -172,6 +180,10 @@ def probe(a):
             arm, seed = pending[0]
             directory = run_dir(a.output_root, a.dataset, "student", seed, arm)
             if (directory / "result.json").is_file():
+                made_by = json.loads((directory / "result.json").read_text())["config"].get("probe_runner_sha256")
+                if made_by != runner_sha256():
+                    sys.exit(f"{directory} was made by a different probe/runner.py "
+                             f"({(made_by or 'unknown')[:12]} vs {runner_sha256()[:12]}); move it aside to rerun")
                 pending.pop(0)
                 print(f"done already: {arm} seed={seed}", flush=True)
                 continue
