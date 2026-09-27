@@ -1,0 +1,9 @@
+{
+  "teacher_epochs": 1,
+  "student_epochs": 2,
+  "batch_size": 4,
+  "eval_batch_size": 8,
+  "accumulation_steps": 1,
+  "warmup_epochs": 1,
+  "probe_epochs": [0, 2]
+}
