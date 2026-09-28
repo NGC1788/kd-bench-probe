@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Entry point: ./kdb all --dataset coco   (see README)
+# uv downloads Python 3.11 into ./.cache/python (not ~/.local); nothing is installed outside this folder.
+set -euo pipefail
+cd "$(dirname "$0")"
+export UV_PYTHON_INSTALL_DIR="$PWD/.cache/python"
+uv python install 3.11 --no-bin --quiet
+exec uv run --python 3.11 run.py "$@"

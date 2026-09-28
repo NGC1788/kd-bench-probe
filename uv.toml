@@ -1,6 +1,7 @@
-# Keep uv's package cache inside this folder (path is relative to where uv runs:
-# always run commands from this folder). Use the server's existing Python and
-# never download one, so nothing is installed outside this folder.
+# Keep uv's package cache inside this folder (the path is relative to where uv runs;
+# ./kdb always runs from this folder). Use only the Python that ./kdb installs into
+# ./.cache/python; never download one implicitly (so a plain `uv run` cannot put a
+# Python under ~/.local).
 cache-dir = ".cache/uv"
-python-preference = "system"
-python-downloads = "never"
+python-preference = "only-managed"
+python-downloads = "manual"

@@ -15,7 +15,7 @@ In the benchmark's reference regime, does removing the ground-truth CE term incr
 | Arms | `full_ce1`, `mask98_ce1`, `full_ce0`, `mask98_ce0`. `ce0` removes the CE term and keeps the KD weight at 0.5 |
 | Seeds | 0, 1, 2, paired across arms |
 | Teacher | One teacher per dataset, shared by all arms. It is either the lab's reference teacher (hash recorded) or retrained with the same protocol |
-| Environment | `uv.lock` in this repository: torch 2.5.1+cu124 (as in the reference runs), the server's Python 3.10–3.12, one CUDA GPU (RTX A5000 class) |
+| Environment | `uv.lock` in this repository: torch 2.5.1+cu124 (as in the reference runs), Python 3.11 installed by uv inside the folder (`./kdb`), one CUDA GPU (RTX A5000 class) |
 
 ## Decision metric and rule
 - **Metric:** the benchmark primary metric (COCO macro accuracy, Waterbirds worst-group accuracy) on test, at the **validation-selected** checkpoint (benchmark rule: never select with test). The last-epoch test value is reported but not used for decisions.
@@ -31,4 +31,4 @@ In the benchmark's reference regime, does removing the ground-truth CE term incr
 - **Sanity check, not a decision:** `mask98_ce1` should match the benchmark's MaskedKD reference within its seed spread. A large mismatch is investigated before anything is interpreted.
 
 ## Deviation log
-(none)
+- 2026-09-29 (before any real run): the server's Python is 3.14, which torch 2.5.1 does not support. `./kdb` now has uv install Python 3.11 inside the folder, the same version as the reference runs. The environment changes; the design does not.

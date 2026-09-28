@@ -8,21 +8,22 @@
 ```bash
 git clone https://github.com/NGC1788/kd-bench-probe
 cd kd-bench-probe
-uv run run.py all --dataset coco
-uv run run.py all --dataset waterbirds
+./kdb all --dataset coco
+./kdb all --dataset waterbirds
 ```
-- `uv run`이 처음 실행될 때 `uv.lock`에 고정된 패키지(torch 2.5.1+cu124 등, 벤치마크 기준 run과 같은 버전)를 폴더 안 `.venv`에 설치해요.
+- `./kdb`는 세 줄짜리 실행 파일이에요. uv로 **Python 3.11을 폴더 안(`.cache/python`)에** 받은 뒤 `uv run`을 불러요. 서버 파이썬 버전(예: 3.14)과 상관없이 돌아요.
+- 처음 실행할 때 `uv.lock`에 고정된 패키지(torch 2.5.1+cu124 등, 벤치마크 기준 run과 같은 버전)를 폴더 안 `.venv`에 설치해요.
 - 한 번 실행하면 데이터 준비 → teacher 학습(30 epoch) → 4조건 × 3 seed 학생 학습 → 결과 집계까지 **앞에서 차례로** 돌아요. 백그라운드 프로세스를 따로 띄우지 않고, 다른 사용자의 프로세스도 들여다보지 않아요.
 - 중간에 끊겨도 **같은 명령을 다시 실행하면 이어서 해요.** 끝난 run은 건너뛰어요.
-- 진행 상황: `uv run run.py status --dataset coco`
-- 결과만 다시 모으기: `uv run run.py report`
+- 진행 상황: `./kdb status --dataset coco`
+- 결과만 다시 모으기: `./kdb report`
 
-**서버에 필요한 것:** `uv`, `git`, `curl`, 파이썬 3.10~3.12(서버에 이미 있는 것을 쓰고, 새로 받지 않아요), CUDA GPU.
+**서버에 필요한 것:** `uv`, `git`, `curl`, CUDA GPU. 파이썬은 `./kdb`가 폴더 안에 받아요.
+**`uv run`을 직접 치지 말고 `./kdb`를 쓰세요.** 폴더 밖에 파이썬이 설치되지 않도록, 폴더 안에 파이썬이 없으면 `uv run`이 일부러 실패하게 해 뒀어요.
 **클러스터에 작업 스케줄러가 있으면**(예: Slurm) 위 명령을 관리자가 안내한 작업 제출 방식으로 돌리면 돼요. 명령 자체는 똑같아요.
 
 ## 한 폴더에 전부
-- 이 프로젝트가 만드는 건 **전부 이 폴더 안**에 생겨요: `.venv`(패키지), `.cache`(uv 캐시, DeiT 가중치, CUDA 커널 캐시), `external`(벤치마크 코드), `outputs`(결과).
-- 그래서 명령은 **반드시 이 폴더 안에서** 실행해야 해요. uv 캐시 경로가 명령을 실행한 위치를 기준으로 잡혀요.
+- 이 프로젝트가 만드는 건 **전부 이 폴더 안**에 생겨요: `.cache/python`(Python 3.11), `.venv`(패키지), `.cache`(uv 캐시, DeiT 가중치, CUDA 커널 캐시), `external`(벤치마크 코드), `outputs`(결과).
 - **다 지우려면 폴더를 삭제하면 끝**이에요: `rm -rf kd-bench-probe`
 
 ## 조건(arm)
@@ -51,7 +52,7 @@ uv run run.py all --dataset waterbirds
 
 ## 파이프라인 점검 (GPU 없이)
 ```bash
-uv run run.py smoke    # 가짜 데이터 + 작은 모델, CPU로 약 1분: teacher → 12 run → report
+./kdb smoke    # 가짜 데이터 + 작은 모델, CPU로 약 1분: teacher → 12 run → report
 ```
 (맥이나 리눅스 CPU에서는 CPU판 torch가 설치돼요.)
 
