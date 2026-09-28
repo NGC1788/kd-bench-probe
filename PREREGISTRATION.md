@@ -1,8 +1,8 @@
 # Pre-registration: label probe on the KSHS × AIM Lab benchmark
 
-**Status: DRAFT (2026-09-27).** To be confirmed, and dated here, before the first student run. After the first student result exists, changes go only to the deviation log.
+**Status: CONFIRMED 2026-09-29, before any real run.** From now on, changes go only to the deviation log.
 
-This probe is separate from the ImageNet-100 probe ([NGC1788/kd-probe](https://github.com/NGC1788/kd-probe)). Its results are reported separately and do not replace it.
+This is now the probe that runs first. The ImageNet-100 probe ([NGC1788/kd-probe](https://github.com/NGC1788/kd-probe)) is deferred: it is run only if this probe shows a signal (outcome A on either dataset), as a confirmation in a label-free-from-scratch regime.
 
 ## Question
 In the benchmark's reference regime, does removing the ground-truth CE term increase the **extra** loss caused by teacher-input masking? The regime is: a DeiT-S teacher fine-tuned from ImageNet and then frozen; an ImageNet-initialized DeiT-Tiny student; COCO single and Waterbirds.
@@ -15,7 +15,7 @@ In the benchmark's reference regime, does removing the ground-truth CE term incr
 | Arms | `full_ce1`, `mask98_ce1`, `full_ce0`, `mask98_ce0`. `ce0` removes the CE term and keeps the KD weight at 0.5 |
 | Seeds | 0, 1, 2, paired across arms |
 | Teacher | One teacher per dataset, shared by all arms. It is either the lab's reference teacher (hash recorded) or retrained with the same protocol |
-| Environment | Python 3.11, torch 2.5.1 + cu124, one RTX A5000 |
+| Environment | `uv.lock` in this repository: torch 2.5.1+cu124 (as in the reference runs), the server's Python 3.10–3.12, one CUDA GPU (RTX A5000 class) |
 
 ## Decision metric and rule
 - **Metric:** the benchmark primary metric (COCO macro accuracy, Waterbirds worst-group accuracy) on test, at the **validation-selected** checkpoint (benchmark rule: never select with test). The last-epoch test value is reported but not used for decisions.

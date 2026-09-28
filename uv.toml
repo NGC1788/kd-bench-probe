@@ -1,0 +1,6 @@
+# Keep uv's package cache inside this folder (path is relative to where uv runs:
+# always run commands from this folder). Use the server's existing Python and
+# never download one, so nothing is installed outside this folder.
+cache-dir = ".cache/uv"
+python-preference = "system"
+python-downloads = "never"

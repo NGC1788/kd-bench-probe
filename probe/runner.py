@@ -12,17 +12,21 @@ its own worker process that swaps in only what the probe needs:
 
 Everything else (data pipeline, optimizer, schedule, validation-selected
 checkpoint, test evaluation, mask diagnostics, result.json) is the reference code.
+Runs execute one after another in the foreground; nothing is started in the
+background and no other process on the machine is inspected.
 """
 import argparse
+import hashlib
 import json
 import shutil
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 HOME = Path(__file__).resolve().parents[1]
 BENCH = HOME / "external" / "kshs-aimlab-benchmarks"
+BENCH_URL = "https://github.com/jeehoo0507/kshs-aimlab-benchmarks"
+BENCH_BRANCH = "codex/maskedkd-reference-runs"
 BENCH_COMMIT = "e1c39e7e1cc48e57305a2c12b0302e1df3349396"
 
 # arm -> teacher tokens kept, whether ground-truth CE is in the student loss
@@ -35,21 +39,25 @@ ARMS = {
     "mask59_ce0": {"keep_patches": 59, "ce": False},
 }
 DEFAULT_ARMS = ["full_ce1", "mask98_ce1", "full_ce0", "mask98_ce0"]
-STUDENT_PEAK_GIB = 1.5  # reference runs measured 1.24 GiB reserved (batch 32); rounded up
-TEACHER_PEAK_GIB = 2.5  # reference teacher measured 2.11 GiB
 
 
 def runner_sha256():
-    import hashlib
     return hashlib.sha256(Path(__file__).resolve().read_bytes()).hexdigest()
 
 
+def git(*args):
+    return subprocess.run(["git", "-C", str(BENCH), *args], capture_output=True, text=True)
+
+
 def use_benchmark():
-    if not (BENCH / "reference" / "engine.py").is_file():
-        sys.exit("benchmark missing: run ./run.sh setup first")
-    head = subprocess.run(["git", "-C", str(BENCH), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-    if head and head != BENCH_COMMIT:
-        sys.exit(f"benchmark is at {head[:7]}, expected {BENCH_COMMIT[:7]}: run ./run.sh setup")
+    """Clone the benchmark at the pinned commit (first use only) and make it importable."""
+    if not (BENCH / ".git").is_dir():
+        BENCH.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "clone", "--quiet", "--branch", BENCH_BRANCH, BENCH_URL, str(BENCH)], check=True)
+    if git("rev-parse", "HEAD").stdout.strip() != BENCH_COMMIT:
+        git("fetch", "--quiet", "origin", BENCH_BRANCH)
+        if git("checkout", "--quiet", BENCH_COMMIT).returncode:
+            sys.exit(f"cannot check out benchmark commit {BENCH_COMMIT[:7]}")
     if str(BENCH) not in sys.path:
         sys.path.insert(0, str(BENCH))
 
@@ -81,7 +89,7 @@ def worker(a):
     cfg = load_config(a.config)
     if a.role == "student":
         spec = ARMS[arm]
-        # The runner's own hash joins the benchmark's run signature, so editing this file
+        # The runner's hash joins the benchmark's run signature, so editing this file
         # can never silently reuse student results produced by an older version of it.
         cfg = {**cfg, "keep_patches": spec["keep_patches"], "probe_arm": arm, "ce_in_loss": spec["ce"],
                "probe_runner_sha256": runner_sha256()}
@@ -104,34 +112,7 @@ def worker(a):
                       "best_validation": result["best_validation"]}), flush=True)
 
 
-# ----------------------------------------------------------------- GPU etiquette
-def free_gib():
-    out = subprocess.run(["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits", "--id=0"],
-                         capture_output=True, text=True)
-    return float(out.stdout.strip().splitlines()[0]) / 1024 if out.returncode == 0 else None
-
-
-def co_user_running(pattern):
-    return bool(pattern) and subprocess.run(["pgrep", "-f", "--", pattern], capture_output=True).returncode == 0
-
-
-def wait_for_gpu(a, peak_gib):
-    if a.device != "cuda":
-        return
-    from scripts.gpu_capacity import GLOBAL_RESERVE_GIB, job_budget_gib
-    need = job_budget_gib(peak_gib) + GLOBAL_RESERVE_GIB
-    while True:
-        if co_user_running(a.wait_pattern):
-            print(f"{time.strftime('%F %T')} waiting: a process matching '{a.wait_pattern}' is running", flush=True)
-        else:
-            free = free_gib()
-            if free is None or free >= need:
-                return
-            print(f"{time.strftime('%F %T')} waiting: {free:.1f} GiB free < {need:.1f} GiB needed", flush=True)
-        time.sleep(300)
-
-
-# ----------------------------------------------------------------- orchestration
+# ----------------------------------------------------------------- steps
 def worker_cmd(a, role, seed, arm="teacher"):
     cmd = [sys.executable, "-m", "probe.runner", "worker", "--dataset", a.dataset, "--role", role,
            "--seed", str(seed), "--arm", arm, "--data-root", str(a.data_root), "--output-root", str(a.output_root),
@@ -139,78 +120,75 @@ def worker_cmd(a, role, seed, arm="teacher"):
     return cmd + (["--config", str(a.config)] if a.config else []) + (["--debug"] if a.debug else [])
 
 
+def run_logged(cmd, log_path):
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a") as log:
+        return subprocess.run(cmd, cwd=HOME, stdout=log, stderr=subprocess.STDOUT).returncode
+
+
 def prepare(a):
+    """Download and validate data with the benchmark's own scripts, run by this project's Python."""
     use_benchmark()
-    from reference.cli import prepare_data, prepare_segmentation, prefetch
-    prepare_data(a.dataset, Path(a.data_root), a.data_root_given)
-    prepare_segmentation(a.dataset, Path(a.data_root), Path(a.seg_root), a.seg_root_given)
+    data, seg = Path(a.data_root), Path(a.seg_root)
+    check = [sys.executable, str(BENCH / "scripts" / "check_assets.py"), a.dataset, str(data)]
+    if a.dataset == "coco":
+        if not (data / "manifest.json").is_file():
+            subprocess.run([sys.executable, str(BENCH / "datasets" / "coco_single" / "prepare.py"),
+                            "--output", str(data)], cwd=BENCH, check=True)
+    else:
+        if not (data / "metadata.csv").is_file():
+            subprocess.run([sys.executable, str(BENCH / "datasets" / "waterbirds" / "download.py"),
+                            "--output", str(data)], cwd=BENCH, check=True)
+        if not seg.is_dir():
+            subprocess.run([sys.executable, str(BENCH / "datasets" / "waterbirds" / "download_masks.py"),
+                            "--dataset", str(data), "--output", str(seg)], cwd=BENCH, check=True)
+        check += ["--seg-root", str(seg)]
+    subprocess.run(check, cwd=BENCH, check=True)
+    from reference.cli import prefetch  # official DeiT-S / DeiT-Tiny ImageNet weights into .cache/torch
     prefetch()
 
 
 def teacher(a):
     use_benchmark()
     directory = run_dir(a.output_root, a.dataset, "teacher", 0)
-    best = directory / "best.pt"
     if a.teacher_ckpt:
         directory.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(a.teacher_ckpt, best)
-        print(f"using provided teacher {a.teacher_ckpt} -> {best}", flush=True)
+        shutil.copyfile(a.teacher_ckpt, directory / "best.pt")
+        print(f"using provided teacher {a.teacher_ckpt}", flush=True)
         return
     if (directory / "result.json").is_file():
-        print(f"teacher done: {directory}", flush=True)
+        print("teacher: done", flush=True)
         return
-    directory.mkdir(parents=True, exist_ok=True)
-    wait_for_gpu(a, TEACHER_PEAK_GIB)
-    with (directory / "train.log").open("a") as log:
-        code = subprocess.run(worker_cmd(a, "teacher", 0), cwd=HOME, stdout=log, stderr=subprocess.STDOUT).returncode
-    if code:
-        sys.exit(f"teacher failed ({code}); see {directory / 'train.log'}")
-    print(f"teacher done: {directory}", flush=True)
+    print(f"teacher: training (log: {directory / 'train.log'})", flush=True)
+    if run_logged(worker_cmd(a, "teacher", 0), directory / "train.log"):
+        sys.exit(f"teacher failed; see {directory / 'train.log'}")
+    print("teacher: done", flush=True)
 
 
 def probe(a):
     use_benchmark()
     if not (run_dir(a.output_root, a.dataset, "teacher", 0) / "best.pt").is_file():
         teacher(a)
-    pending = [(arm, seed) for seed in a.seeds for arm in a.arms]  # seed-major: paired arms finish together
-    active = {}
     failed = []
-    while pending or active:
-        while pending and len(active) < a.jobs:
-            arm, seed = pending[0]
+    for seed in a.seeds:          # seed-major: the four paired arms of a seed finish together
+        for arm in a.arms:
             directory = run_dir(a.output_root, a.dataset, "student", seed, arm)
             if (directory / "result.json").is_file():
                 made_by = json.loads((directory / "result.json").read_text())["config"].get("probe_runner_sha256")
                 if made_by != runner_sha256():
-                    sys.exit(f"{directory} was made by a different probe/runner.py "
-                             f"({(made_by or 'unknown')[:12]} vs {runner_sha256()[:12]}); move it aside to rerun")
-                pending.pop(0)
-                print(f"done already: {arm} seed={seed}", flush=True)
+                    sys.exit(f"{directory} was made by a different probe/runner.py; move it aside to rerun")
+                print(f"{arm} seed={seed}: done", flush=True)
                 continue
-            wait_for_gpu(a, STUDENT_PEAK_GIB)
-            pending.pop(0)
-            directory.mkdir(parents=True, exist_ok=True)
-            log = (directory / "train.log").open("a")
-            proc = subprocess.Popen(worker_cmd(a, "student", seed, arm), cwd=HOME, stdout=log, stderr=subprocess.STDOUT)
-            active[(arm, seed)] = (proc, log)
-            print(f"{time.strftime('%F %T')} start {a.dataset} {arm} seed={seed} pid={proc.pid}", flush=True)
-            time.sleep(5)
-        for key, (proc, log) in list(active.items()):
-            code = proc.poll()
-            if code is None:
-                continue
-            log.close()
-            del active[key]
-            print(f"{time.strftime('%F %T')} end {a.dataset} {key[0]} seed={key[1]} exit={code}", flush=True)
-            if code:
-                failed.append(key)
-        if active:
-            time.sleep(10)
+            print(f"{arm} seed={seed}: training (log: {directory / 'train.log'})", flush=True)
+            if run_logged(worker_cmd(a, "student", seed, arm), directory / "train.log"):
+                failed.append(f"{arm}/seed_{seed}")
+                print(f"{arm} seed={seed}: FAILED, see {directory / 'train.log'}", flush=True)
     if failed:
-        sys.exit(f"failed runs: {failed} (rerun the same command to resume them)")
+        sys.exit(f"failed runs: {failed}. Rerun the same command to resume them.")
 
 
 def status(a):
+    use_benchmark()
     cfg = load_config(a.config)
     rows = [("teacher", 0, "teacher")] + [(arm, s, "student") for s in a.seeds for arm in a.arms]
     for arm, seed, role in rows:
@@ -218,7 +196,7 @@ def status(a):
         hist = d / "history.json"
         done = len(json.loads(hist.read_text())) if hist.is_file() else 0
         total = cfg["teacher_epochs"] if role == "teacher" else cfg["student_epochs"]
-        state = "complete" if (d / "result.json").is_file() else ("running/paused" if done else "pending")
+        state = "complete" if (d / "result.json").is_file() else ("in progress" if done else "pending")
         print(f"{a.dataset:10s} {arm:11s} seed={seed}  {done:3d}/{total}  {state}")
 
 
@@ -228,8 +206,6 @@ def main():
     p.add_argument("--dataset", choices=["coco", "waterbirds"], required=True)
     p.add_argument("--arms", nargs="+", default=DEFAULT_ARMS, choices=sorted(ARMS))
     p.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2])
-    p.add_argument("--jobs", type=int, default=1, help="concurrent student runs (memory-checked before each start)")
-    p.add_argument("--wait-pattern", default="", help="do not start a run while a process matching this is alive")
     p.add_argument("--teacher-ckpt", help="use an existing teacher best.pt (e.g. the lab's reference teacher)")
     p.add_argument("--data-root")
     p.add_argument("--seg-root")
@@ -243,7 +219,6 @@ def main():
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--arm", default="teacher")
     a = p.parse_args()
-    a.data_root_given, a.seg_root_given = a.data_root is not None, a.seg_root is not None
     a.data_root = str(Path(a.data_root).resolve()) if a.data_root else str(default_data_root(a.dataset))
     a.seg_root = str(Path(a.seg_root).resolve()) if a.seg_root else str(BENCH / "data" / "CUB_200_2011" / "segmentations")
     a.output_root = str(Path(a.output_root).resolve())
@@ -253,6 +228,10 @@ def main():
         return worker(a)
     if a.command == "status":
         return status(a)
+    if a.device == "cuda":
+        import torch
+        if not torch.cuda.is_available():
+            sys.exit("CUDA is not available to this process (use the GPU node / job the admin assigned)")
     if a.command == "prepare":
         return prepare(a)
     if a.command == "teacher":
