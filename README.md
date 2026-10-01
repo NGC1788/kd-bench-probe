@@ -68,12 +68,12 @@ cd kd-bench-probe
 ```bash
 ./kdb saturation
 ```
-- 끝난 run의 `history.json`만 읽어요. GPU를 쓰지 않고 학습도 하지 않아요.
-- teacher 출력이 학습 이미지에서 label smoothing 라벨 q와 같으면, 학생의 마지막 epoch에서 `train CE − train KD`가 q의 엔트로피 H(q)와 같아져요.
-  - KD = KL(q‖s) = CE_ls(s) − H(q)이기 때문이에요.
-- 그러면 학습셋에서 KD가 라벨 이상의 정보를 주지 못한 거예요. full, 마스킹, CE 켬/끔이 사실상 같은 손실을 최적화한 셈이에요.
+- 끝난 run의 `history.json`만 읽는다. GPU를 쓰지 않고 학습도 하지 않는다.
+- teacher 출력이 학습 이미지에서 label smoothing 라벨 q와 같으면, 학생의 마지막 epoch에서 `train CE − train KD`가 q의 엔트로피 H(q)와 같아진다.
+  - KD = KL(q‖s) = CE_ls(s) − H(q)이기 때문이다.
+- 그러면 학습셋에서 KD가 라벨 이상의 정보를 주지 못한 것이다. full, 마스킹, CE 켬/끔이 사실상 같은 손실을 최적화한 셈이다.
 - H(q) 기준값: COCO(10클래스) 0.5003, Waterbirds(2클래스) 0.1985 (ε = 0.1).
-- CE를 끈 조건은 CE가 0으로 기록되기 때문에 `_ce1` 조건만 확인해요.
+- CE를 끈 조건은 CE가 0으로 기록되기 때문에 `_ce1` 조건만 확인한다.
 
 ## License
 MIT (이 저장소의 코드만). 벤치마크와 데이터는 각자의 조건을 따른다.
