@@ -4,6 +4,7 @@
     uv run run.py all --dataset waterbirds
     uv run run.py status --dataset coco
     uv run run.py report
+    uv run run.py saturation                 # did the teacher collapse onto the smoothed label?
     uv run run.py smoke                      # CPU, fake data, tiny models (pipeline check)
 
 Everything the project writes stays in this folder (.venv, .cache, external, outputs).
@@ -26,6 +27,10 @@ if __name__ == "__main__":
     command = sys.argv[1] if len(sys.argv) > 1 else "help"
     if command == "report":
         from probe.report import main
+        sys.argv = [sys.argv[0]] + sys.argv[2:]
+        main()
+    elif command == "saturation":
+        from probe.saturation import main
         sys.argv = [sys.argv[0]] + sys.argv[2:]
         main()
     elif command == "smoke":

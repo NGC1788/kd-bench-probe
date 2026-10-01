@@ -17,6 +17,7 @@ cd kd-bench-probe
 - 중간에 끊겨도 **같은 명령을 다시 실행하면 이어서 해요.** 끝난 run은 건너뛴다.
 - 진행 상황: `./kdb status --dataset coco`
 - 결과만 다시 모으기: `./kdb report`
+- teacher 포화 확인: `./kdb saturation` (아래 [teacher 포화 확인](#teacher-포화-확인))
 
 **서버에 필요한 것:** `uv`, `git`, `curl`, CUDA GPU. 파이썬은 `./kdb`가 폴더 안에 받는다.
 **`uv run`을 직접 치지 말고 `./kdb`를 쓰세요.** 폴더 밖에 파이썬이 설치되지 않도록, 폴더 안에 파이썬이 없으면 `uv run`이 일부러 실패하게 해 두었다.
@@ -62,6 +63,17 @@ cd kd-bench-probe
 | `outputs/runs.csv` | run당 한 줄. 벤치마크 `runs.csv`와 같은 열에 `ce_in_loss`를 더함(method = arm) |
 | `outputs/summary.csv` | 조건별 3-seed 평균·표준편차 |
 | `outputs/p1.json` | seed별로 짝지은 gap_1, gap_0, ΔCE와 판정([PREREGISTRATION.md](PREREGISTRATION.md)), 기준 재현 검사 |
+
+## teacher 포화 확인
+```bash
+./kdb saturation
+```
+- 끝난 run의 `history.json`만 읽어요. GPU를 쓰지 않고 학습도 하지 않아요.
+- teacher 출력이 학습 이미지에서 label smoothing 라벨 q와 같으면, 학생의 마지막 epoch에서 `train CE − train KD`가 q의 엔트로피 H(q)와 같아져요.
+  - KD = KL(q‖s) = CE_ls(s) − H(q)이기 때문이에요.
+- 그러면 학습셋에서 KD가 라벨 이상의 정보를 주지 못한 거예요. full, 마스킹, CE 켬/끔이 사실상 같은 손실을 최적화한 셈이에요.
+- H(q) 기준값: COCO(10클래스) 0.5003, Waterbirds(2클래스) 0.1985 (ε = 0.1).
+- CE를 끈 조건은 CE가 0으로 기록되기 때문에 `_ce1` 조건만 확인해요.
 
 ## License
 MIT (이 저장소의 코드만). 벤치마크와 데이터는 각자의 조건을 따른다.
