@@ -19,6 +19,7 @@ cd kd-bench-probe
 - 결과만 다시 모으기: `./kdb report`
 - teacher 포화 확인: `./kdb saturation` (아래 [teacher 포화 확인](#teacher-포화-확인))
 - 검증 곡선 전체 비교(탐색용, 판정에는 쓰지 않음): `./kdb curves`. 선택된 체크포인트 한 점이 아니라 epoch 구간 평균으로 조건을 비교한다.
+- 결과 보관: `./kdb archive --name 이름`. report·saturation·curves를 새로 만든 뒤, `outputs/`의 모든 파일을 체크포인트(`*.pt`)만 빼고 `results/이름/`에 복사한다. run이 비트 단위로 재현되므로 가중치는 기록에 필요하지 않다.
 
 **서버에 필요한 것:** `uv`, `git`, `curl`, CUDA GPU. 파이썬은 `./kdb`가 폴더 안에 받는다.
 **`uv run`을 직접 치지 말고 `./kdb`를 쓰세요.** 폴더 밖에 파이썬이 설치되지 않도록, 폴더 안에 파이썬이 없으면 `uv run`이 일부러 실패하게 해 두었다.

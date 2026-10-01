@@ -6,6 +6,7 @@
     uv run run.py report
     uv run run.py saturation                 # did the teacher collapse onto the smoothed label?
     uv run run.py curves                     # whole validation curves, not only the selected checkpoint
+    uv run run.py archive --name NAME        # copy all results except checkpoints into results/NAME for git
     uv run run.py smoke                      # CPU, fake data, tiny models (pipeline check)
 
 Everything the project writes stays in this folder (.venv, .cache, external, outputs).
@@ -30,7 +31,7 @@ if __name__ == "__main__":
         from probe.report import main
         sys.argv = [sys.argv[0]] + sys.argv[2:]
         main()
-    elif command in ("saturation", "curves"):
+    elif command in ("saturation", "curves", "archive"):
         main = __import__(f"probe.{command}", fromlist=["main"]).main
         sys.argv = [sys.argv[0]] + sys.argv[2:]
         main()
